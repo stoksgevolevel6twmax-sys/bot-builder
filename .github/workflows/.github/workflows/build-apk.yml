@@ -1,0 +1,66 @@
+name: APK MASTER BUILDER
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_url:
+        description: 'URL ZIP Project'
+        required: true
+        type: string
+      chat_id:
+        description: 'ID Telegram'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download ZIP
+        run: |
+          curl -L "${{ github.event.inputs.zip_url }}" -o project.zip
+          mkdir app
+          unzip -q project.zip -d app/
+
+      - name: Cari Root Project
+        id: cari
+        run: |
+          cd app
+          FILE=$(find . -name "pubspec.yaml" | head -1)
+          if [ -n "$FILE" ]; then
+            DIR=$(dirname "$FILE")
+            echo "root=$DIR" >> $GITHUB_OUTPUT
+            echo "type=flutter" >> $GITHUB_OUTPUT
+          else
+            echo "root=" >> $GITHUB_OUTPUT
+            echo "type=native" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.16.0'
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: |
+          cd app/${{ steps.cari.outputs.root }}
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd app/${{ steps.cari.outputs.root }}
+          flutter build apk --release
+
+      - name: Upload APK ke Telegram
+        run: |
+          APK_PATH="app/${{ steps.cari.outputs.root }}/build/app/outputs/flutter-apk/app-release.apk"
+          curl -F "chat_id=${{ github.event.inputs.chat_id }}" \
+               -F "document=@$APK_PATH" \
+               "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument"
